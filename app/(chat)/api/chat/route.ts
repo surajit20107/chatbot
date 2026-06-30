@@ -42,6 +42,7 @@ import type { DBMessage } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
 import { getComposioToolsForUser } from "@/lib/composio/client";
 import { sanitizeToolCallIds } from "@/lib/composio/sanitize-messages";
+import { getSupermemoryToolsForUser } from "@/lib/supermemory/client";
 import { checkIpRateLimit } from "@/lib/ratelimit";
 import type { ChatMessage } from "@/lib/types";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
@@ -189,10 +190,14 @@ export async function POST(request: Request) {
     const isReasoningModel = capabilities?.reasoning === true;
     const supportsTools = capabilities?.tools === true;
 
-    const composioTools =
+    const [composioTools, memoryTools] = await Promise.all([
       session.user.type !== "guest"
-        ? await getComposioToolsForUser(session.user.id)
-        : {};
+        ? getComposioToolsForUser(session.user.id)
+        : Promise.resolve({}),
+      supportsTools && process.env.SUPERMEMORY_API_KEY && session.user.type === "regular"
+        ? Promise.resolve(getSupermemoryToolsForUser(session.user.id))
+        : Promise.resolve({}),
+    ]);
 
     const sanitizedUiMessages = sanitizeToolCallIds(uiMessages);
     const modelMessages = await convertToModelMessages(sanitizedUiMessages);
@@ -220,7 +225,7 @@ export async function POST(request: Request) {
           }),
         };
 
-        const allTools: ToolSet = { ...localTools, ...composioTools };
+        const allTools: ToolSet = { ...localTools, ...composioTools, ...memoryTools };
 
         const result = streamText({
           model: getLanguageModel(chatModel),
