@@ -546,6 +546,32 @@ export async function updateChatVisibilityById({
   }
 }
 
+export async function getUserSoul({ userId }: { userId: string }) {
+  try {
+    const [row] = await db
+      .select({ soul: user.soul })
+      .from(user)
+      .where(eq(user.id, userId));
+    return row?.soul ?? null;
+  } catch (_error) {
+    throw new ChatbotError("bad_request:database", "Failed to get user soul");
+  }
+}
+
+export async function updateUserSoul({
+  userId,
+  soul,
+}: {
+  userId: string;
+  soul: string | null;
+}) {
+  try {
+    return await db.update(user).set({ soul }).where(eq(user.id, userId));
+  } catch (_error) {
+    throw new ChatbotError("bad_request:database", "Failed to update user soul");
+  }
+}
+
 export async function updateChatTitleById({
   chatId,
   title,

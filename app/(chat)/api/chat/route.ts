@@ -25,6 +25,7 @@ import { createDocument } from "@/lib/ai/tools/create-document";
 import { editDocument } from "@/lib/ai/tools/edit-document";
 import { getWeather } from "@/lib/ai/tools/get-weather";
 import { requestSuggestions } from "@/lib/ai/tools/request-suggestions";
+import { setSoulTool } from "@/lib/ai/tools/set-soul";
 import { updateDocument } from "@/lib/ai/tools/update-document";
 import { isProductionEnvironment } from "@/lib/constants";
 import {
@@ -33,6 +34,7 @@ import {
   getChatById,
   getMessageCountByUserId,
   getMessagesByChatId,
+  getUserSoul,
   saveChat,
   saveMessages,
   updateChatTitleById,
@@ -190,14 +192,19 @@ export async function POST(request: Request) {
     const isReasoningModel = capabilities?.reasoning === true;
     const supportsTools = capabilities?.tools === true;
 
-    const [composioTools, memoryTools] = await Promise.all([
+    const [composioTools, memoryTools, soul] = await Promise.all([
       session.user.type !== "guest"
         ? getComposioToolsForUser(session.user.id)
         : Promise.resolve({}),
       supportsTools && process.env.SUPERMEMORY_API_KEY && session.user.type === "regular"
         ? Promise.resolve(getSupermemoryToolsForUser(session.user.id))
         : Promise.resolve({}),
+      session.user.type !== "guest"
+        ? getUserSoul({ userId: session.user.id })
+        : Promise.resolve(null),
     ]);
+
+    const needsOnboarding = !soul && session.user.type !== "guest";
 
     const sanitizedUiMessages = sanitizeToolCallIds(uiMessages);
     const modelMessages = await convertToModelMessages(sanitizedUiMessages);
@@ -205,7 +212,7 @@ export async function POST(request: Request) {
     const stream = createUIMessageStream({
       originalMessages: isToolApprovalFlow ? uiMessages : undefined,
       execute: async ({ writer: dataStream }) => {
-        const localTools = {
+        const localTools: Record<string, unknown> = {
           getWeather,
           createDocument: createDocument({
             session,
@@ -225,11 +232,15 @@ export async function POST(request: Request) {
           }),
         };
 
+        if (session.user.type !== "guest") {
+          localTools.setSoul = setSoulTool(session.user.id);
+        }
+
         const allTools: ToolSet = { ...localTools, ...composioTools, ...memoryTools };
 
         const result = streamText({
           model: getLanguageModel(chatModel),
-          system: systemPrompt({ requestHints, supportsTools }),
+          system: systemPrompt({ requestHints, supportsTools, soul, needsOnboarding }),
           messages: modelMessages,
           stopWhen: stepCountIs(5),
           ...(supportsTools ? {} : { experimental_activeTools: [] }),

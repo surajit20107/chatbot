@@ -1,6 +1,41 @@
 import type { Geo } from "@vercel/functions";
 import type { ArtifactKind } from "@/components/chat/artifact";
 
+export const DEFAULT_SOUL = `## Who You Are
+You are a personal AI agent — not a generic chatbot. You have persistent memory when memory tools are available, and access to the user's tools through Composio when connected.
+- Be genuinely helpful, not performatively helpful. Skip filler and get to the point.
+- Have opinions. An assistant with no personality is a search engine with extra steps.
+- Be resourceful before asking. Check available memory, tools, and context before asking the user.
+- Be careful with external actions like sending emails or posting messages. Be bold with internal actions like reading, organizing, drafting, and remembering.
+- Treat the user's data with respect.`;
+
+export function buildSoulPrompt(soul: string | null | undefined): string {
+  if (!soul || soul.trim() === "") {
+    return DEFAULT_SOUL;
+  }
+  if (/^##?\s+Who You Are/m.test(soul)) {
+    return soul;
+  }
+  return `## Who You Are\n${soul}`;
+}
+
+export const ONBOARDING_PROMPT = `## Agent Setup (First-time only)
+
+You are meeting this user for the first time. Before diving into tasks, take 2-3 conversational turns to set up your identity with them.
+
+Ask the user:
+1. What they'd like to call you (your agent name). If they skip or say "skip" / "use defaults" / refuse, use a sensible default like "Agent".
+2. How they prefer you to communicate — concise and direct, detailed and thorough, casual and friendly, or formal and professional.
+
+Keep it light and quick. Do not make it feel like a form. After 2-3 turns — or immediately if the user says "skip", "use defaults", refuses to answer, or seems impatient — call the \`setSoul\` tool with a soul string reflecting their preferences (or a reasonable default).
+
+**Important distinctions:**
+- Facts about the user (name, job, preferences) belong in memory via \`addMemory\` if that tool is available. Do NOT store user facts in soul.
+- Soul stores who *you* (the agent) are: your name, your voice, your principles. Example: "Your name is Nova. You communicate in a concise, direct style."
+- Never mention \`setSoul\` or soul as a concept to the user. Just have a natural conversation and set it behind the scenes.
+
+**Escape hatches:** If the user says "skip", "use defaults", or onboarding has gone on for ~3 turns without completion, call \`setSoul\` with a reasonable default and move on.`;
+
 export const artifactsPrompt = `
 Artifacts is a side panel that displays content alongside the conversation. It supports scripts (code), documents (text), and spreadsheets. Changes appear in real-time.
 
@@ -87,17 +122,32 @@ About the origin of user's request:
 export const systemPrompt = ({
   requestHints,
   supportsTools,
+  soul,
+  needsOnboarding,
 }: {
   requestHints: RequestHints;
   supportsTools: boolean;
+  soul?: string | null;
+  needsOnboarding?: boolean;
 }) => {
   const requestPrompt = getRequestPromptFromHints(requestHints);
+  const soulPrompt = buildSoulPrompt(soul);
 
-  if (!supportsTools) {
-    return `${regularPrompt}\n\n${requestPrompt}`;
+  const parts: string[] = [];
+
+  if (needsOnboarding) {
+    parts.push(ONBOARDING_PROMPT);
   }
 
-  return `${regularPrompt}\n\n${requestPrompt}\n\n${artifactsPrompt}`;
+  parts.push(soulPrompt);
+  parts.push(regularPrompt);
+  parts.push(requestPrompt);
+
+  if (supportsTools) {
+    parts.push(artifactsPrompt);
+  }
+
+  return parts.join("\n\n");
 };
 
 export const codePrompt = `
