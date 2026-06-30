@@ -1,0 +1,51 @@
+Add a per-user agent identity ("soul") with conversational onboarding.
+
+Goal: give each signed-in user a persistent agent personality. This is separate from long-term memory: memory stores facts about the user, while soul stores who the agent is and how it should behave.
+
+1. Schema (lib/db/schema.ts)
+   - Add nullable text column `soul` to the User table.
+   - Run pnpm db:generate then pnpm db:migrate.
+
+2. Queries (lib/db/queries.ts)
+   - Add getUserSoul({ userId }) and updateUserSoul({ userId, soul }).
+
+3. Prompt assembler (lib/ai/prompts.ts)
+   - Export DEFAULT_SOUL with this markdown:
+     ## Who You Are
+     You are a personal AI agent — not a generic chatbot. You have persistent memory when memory tools are available, and access to the user's tools through Composio when connected.
+     - Be genuinely helpful, not performatively helpful. Skip filler and get to the point.
+     - Have opinions. An assistant with no personality is a search engine with extra steps.
+     - Be resourceful before asking. Check available memory, tools, and context before asking the user.
+     - Be careful with external actions like sending emails or posting messages. Be bold with internal actions like reading, organizing, drafting, and remembering.
+     - Treat the user's data with respect.
+   - Export buildSoulPrompt(soul): returns DEFAULT_SOUL if null/empty, else wraps in "## Who You Are" if no heading present.
+   - Export ONBOARDING_PROMPT — instructs the agent to collect the user's preferred agent name + communication style over 2-3 conversational turns, then call setSoul.
+   - If addMemory is already available, ONBOARDING_PROMPT may tell the model to store user facts like the user's name with addMemory. If memory tools are not available, do not call or mention addMemory.
+   - Make the distinction explicit: user facts belong in memory; the agent's name, voice, principles, and boundaries belong in soul.
+   - Include escape hatches: if the user says "skip", "use defaults", refuses a name, or onboarding has gone on for ~3 turns, call setSoul with a reasonable default and move on.
+   - Extend the existing systemPrompt function to accept soul and needsOnboarding, while preserving existing prompt sections such as request hints, Composio instructions, and artifacts rules.
+   - Compose the prompt in this order: onboarding block if needed, buildSoulPrompt(soul), regularPrompt, then the existing optional sections.
+
+4. setSoul tool (lib/ai/tools/set-soul.ts)
+   - Takes { soul: string } (20-4000 chars), calls updateUserSoul.
+   - Wired into localTools in app/(chat)/api/chat/route.ts ONLY for non-guest users.
+
+5. Chat route wiring (app/(chat)/api/chat/route.ts)
+   - const soul = await getUserSoul({ userId: session.user.id });
+   - const needsOnboarding = !soul && session.user.type !== "guest";
+   - Pass both to systemPrompt(...).
+
+6. /admin/agent page
+   - Server component reads soul + DEFAULT_SOUL.
+   - Client subcomponent: textarea, Save button (PATCH), Reset to default button (PATCH null).
+   - Read-only preview of DEFAULT_SOUL beneath.
+
+7. API route (app/api/agent/soul/route.ts)
+   - GET: return current soul. Auth required, non-guest only.
+   - PATCH: { soul: string | null } — null/empty clears to default.
+
+Verify:
+- New signup → first message → agent runs onboarding (asks name/style), then commits via setSoul.
+- /admin/agent → shows the new soul, Save persists, Reset clears.
+- Guest user → ONBOARDING_PROMPT never injected, setSoul tool not exposed.
+- Existing chats still work for users with soul already set.
