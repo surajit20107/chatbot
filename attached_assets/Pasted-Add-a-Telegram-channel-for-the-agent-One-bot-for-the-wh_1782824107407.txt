@@ -1,0 +1,67 @@
+Add a Telegram channel for the agent. One bot for the whole app, per-user account linking.
+
+Implement v1 only: private DMs, account linking, text messages, and one-shot agent replies. Do NOT build group chats, file uploads, voice messages, or streaming.
+
+Build Telegram as its own channel: the webhook receives DMs, links them to a signed-in user, runs the agent with generateText, and replies through the Telegram Bot API.
+
+Install and wire anything missing before building the Telegram route:
+- If @supermemory/tools is missing, install it and use supermemoryTools(SUPERMEMORY_API_KEY, { containerTags: [user.id] }).
+- If a Composio helper already exists, reuse it. If not, add a small helper that returns Composio tools for a user id.
+
+1. Schema (lib/db/schema.ts)
+   - Add to User: telegramChatId (varchar, unique), telegramLinkToken (varchar, unique), telegramLinkTokenExpiresAt (timestamptz).
+   - Add new TelegramTurn table: id, telegramChatId, role ("user"|"assistant"), content (text), createdAt.
+   - TelegramTurn is working memory for the Telegram chat. Key it by telegramChatId; do not require a userId column.
+   - pnpm db:generate && pnpm db:migrate.
+
+2. lib/telegram.ts — thin Bot API client
+   - sendTelegramMessage, getWebhookInfo, setWebhook, deleteWebhook, getBotInfo.
+   - All read TELEGRAM_BOT_TOKEN from env.
+   - Use NEXT_PUBLIC_APP_URL when building user-facing links back to the web app.
+   - setWebhook must call Telegram's setWebhook with:
+     - url: `${NEXT_PUBLIC_APP_URL}/api/telegram-webhook`
+     - secret_token: TELEGRAM_WEBHOOK_SECRET
+     - allowed_updates: ["message"]
+     - drop_pending_updates: true when registering from the dev/debug page.
+   - getWebhookInfo should expose pending_update_count and last_error_message so debugging is obvious.
+   - deleteWebhook should support drop_pending_updates for local reset/debug flows.
+
+3. Public webhook bypass (proxy.ts / middleware.ts)
+   - If the app has middleware/proxy auth guards, explicitly bypass /api/telegram-webhook BEFORE auth redirects or guest-session redirects.
+   - Telegram is not a logged-in browser user. The webhook must receive Telegram's POST directly and return a 2xx response.
+   - A 307/308 redirect breaks Telegram delivery. getWebhookInfo will show "Wrong response from the webhook: 307 Temporary Redirect".
+
+4. Webhook handler (app/api/telegram-webhook/route.ts)
+   - Validates x-telegram-bot-api-secret-token via timingSafeEqual against TELEGRAM_WEBHOOK_SECRET.
+   - Filters chat.type !== "private" (drop groups).
+   - Special-case "/start <token>" but still return {ok:true} immediately. Do the token lookup, DB update, and "Linked!" reply inside after() so Telegram does not time out.
+   - If user sends "/start" with no valid token, reply with instructions to link from /admin/telegram, also inside after().
+   - Regular messages: dispatch agent in after(), return {ok:true} immediately.
+   - Agent dispatch: load user via getUserByTelegramChatId, build Composio tools for that user, build supermemoryTools(SUPERMEMORY_API_KEY, { containerTags: [user.id] }), load last 10 TelegramTurn rows for working memory, generateText (one-shot, NOT streamText), persist both turns, sendTelegramMessage.
+   - Use the existing regularPrompt plus a short Telegram brevity rule.
+   - Use stopWhen: stepCountIs(8) or similar so Composio meta-tools can search, connect, and execute across multiple tool steps.
+
+5. Linking API
+   - POST /api/telegram/link: generate 8-char token, set User.telegramLinkToken + 10min expiry, return { token, botUsername, deepLink, expiresInMinutes }.
+   - GET /api/telegram/status: returns { linked: boolean, telegramChatId? }.
+   - POST /api/telegram/unlink: clears telegramChatId and any link token fields for the current user.
+
+6. /admin/telegram page (end-user)
+   - "Link Telegram" button → calls POST /link → shows "Send /start ABC12345 to @your_bot" + t.me link.
+   - Polls /status every 3s until linked.
+   - Unlink button calls POST /unlink.
+
+7. /telegram page (developer debug)
+   - Shows getBotInfo + getWebhookInfo.
+   - "Register webhook" button (auto-detects host, registers /api/telegram-webhook).
+   - "Delete webhook" button.
+   - Surface webhook delivery errors from getWebhookInfo.last_error_message.
+   - Note: getUpdates/long polling will not work while a webhook is set; use Delete webhook first if you ever switch modes.
+
+Verify:
+- BotFather token + secret in .env.local, dev server restarted.
+- ngrok running, /telegram shows webhook registered with pending_update_count = 0 and no last_error_message.
+- Direct POST to /api/telegram-webhook with the secret header returns 200, not 307/308.
+- /admin/telegram → link → DM bot with a fresh "/start <code>" (not plain "/start") → page flips to linked.
+- After linked, DM bot → "fetch my latest emails" uses the same Gmail you OAuthed on web.
+- Cross-channel memory: tell Telegram "remember I prefer concise replies" → ask in web chat "what do you know about my style?" → recalls.

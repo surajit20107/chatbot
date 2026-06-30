@@ -20,6 +20,9 @@ export const user = pgTable("User", {
   image: text("image"),
   isAnonymous: boolean("isAnonymous").notNull().default(false),
   soul: text("soul"),
+  telegramChatId: varchar("telegramChatId", { length: 64 }).unique(),
+  telegramLinkToken: varchar("telegramLinkToken", { length: 16 }).unique(),
+  telegramLinkTokenExpiresAt: timestamp("telegramLinkTokenExpiresAt"),
   createdAt: timestamp("createdAt").notNull().defaultNow(),
   updatedAt: timestamp("updatedAt").notNull().defaultNow(),
 });
@@ -135,3 +138,13 @@ export const stream = pgTable(
 );
 
 export type Stream = InferSelectModel<typeof stream>;
+
+export const telegramTurn = pgTable("TelegramTurn", {
+  id: uuid("id").primaryKey().notNull().defaultRandom(),
+  telegramChatId: varchar("telegramChatId", { length: 64 }).notNull(),
+  role: varchar("role", { enum: ["user", "assistant"] }).notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("createdAt").notNull().defaultNow(),
+});
+
+export type TelegramTurn = InferSelectModel<typeof telegramTurn>;

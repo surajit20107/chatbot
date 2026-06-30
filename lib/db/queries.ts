@@ -27,6 +27,7 @@ import {
   type Suggestion,
   stream,
   suggestion,
+  telegramTurn,
   type User,
   user,
   vote,
@@ -653,6 +654,175 @@ export async function getStreamIdsByChatId({ chatId }: { chatId: string }) {
     throw new ChatbotError(
       "bad_request:database",
       "Failed to get stream ids by chat id"
+    );
+  }
+}
+
+export async function getUserByTelegramChatId({
+  telegramChatId,
+}: {
+  telegramChatId: string;
+}) {
+  try {
+    const [row] = await db
+      .select()
+      .from(user)
+      .where(eq(user.telegramChatId, telegramChatId));
+    return row ?? null;
+  } catch (_error) {
+    throw new ChatbotError(
+      "bad_request:database",
+      "Failed to get user by telegramChatId"
+    );
+  }
+}
+
+export async function getUserByTelegramLinkToken({ token }: { token: string }) {
+  try {
+    const now = new Date();
+    const [row] = await db
+      .select()
+      .from(user)
+      .where(
+        and(
+          eq(user.telegramLinkToken, token),
+          gt(user.telegramLinkTokenExpiresAt, now)
+        )
+      );
+    return row ?? null;
+  } catch (_error) {
+    throw new ChatbotError(
+      "bad_request:database",
+      "Failed to get user by telegram link token"
+    );
+  }
+}
+
+export async function setTelegramLinkToken({
+  userId,
+  token,
+  expiresAt,
+}: {
+  userId: string;
+  token: string;
+  expiresAt: Date;
+}) {
+  try {
+    return await db
+      .update(user)
+      .set({ telegramLinkToken: token, telegramLinkTokenExpiresAt: expiresAt })
+      .where(eq(user.id, userId));
+  } catch (_error) {
+    throw new ChatbotError(
+      "bad_request:database",
+      "Failed to set telegram link token"
+    );
+  }
+}
+
+export async function linkTelegramChatId({
+  userId,
+  telegramChatId,
+}: {
+  userId: string;
+  telegramChatId: string;
+}) {
+  try {
+    return await db
+      .update(user)
+      .set({
+        telegramChatId,
+        telegramLinkToken: null,
+        telegramLinkTokenExpiresAt: null,
+      })
+      .where(eq(user.id, userId));
+  } catch (_error) {
+    throw new ChatbotError(
+      "bad_request:database",
+      "Failed to link telegram chat id"
+    );
+  }
+}
+
+export async function unlinkTelegramUser({ userId }: { userId: string }) {
+  try {
+    return await db
+      .update(user)
+      .set({
+        telegramChatId: null,
+        telegramLinkToken: null,
+        telegramLinkTokenExpiresAt: null,
+      })
+      .where(eq(user.id, userId));
+  } catch (_error) {
+    throw new ChatbotError("bad_request:database", "Failed to unlink telegram");
+  }
+}
+
+export async function getTelegramStatusByUserId({ userId }: { userId: string }) {
+  try {
+    const [row] = await db
+      .select({
+        telegramChatId: user.telegramChatId,
+        telegramLinkToken: user.telegramLinkToken,
+        telegramLinkTokenExpiresAt: user.telegramLinkTokenExpiresAt,
+      })
+      .from(user)
+      .where(eq(user.id, userId));
+    return row ?? null;
+  } catch (_error) {
+    throw new ChatbotError(
+      "bad_request:database",
+      "Failed to get telegram status"
+    );
+  }
+}
+
+export async function getRecentTelegramTurns({
+  telegramChatId,
+  limit = 10,
+}: {
+  telegramChatId: string;
+  limit?: number;
+}) {
+  try {
+    const rows = await db
+      .select()
+      .from(telegramTurn)
+      .where(eq(telegramTurn.telegramChatId, telegramChatId))
+      .orderBy(desc(telegramTurn.createdAt))
+      .limit(limit);
+    return rows.reverse();
+  } catch (_error) {
+    throw new ChatbotError(
+      "bad_request:database",
+      "Failed to get recent telegram turns"
+    );
+  }
+}
+
+export async function saveTelegramTurns({
+  turns,
+}: {
+  turns: Array<{
+    telegramChatId: string;
+    role: "user" | "assistant";
+    content: string;
+  }>;
+}) {
+  try {
+    return await db.insert(telegramTurn).values(
+      turns.map((t) => ({
+        telegramChatId: t.telegramChatId,
+        role: t.role,
+        content: t.content,
+        createdAt: new Date(),
+      }))
+    );
+  } catch (_error) {
+    throw new ChatbotError(
+      "bad_request:database",
+      "Failed to save telegram turns"
     );
   }
 }
