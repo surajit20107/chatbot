@@ -32,6 +32,14 @@ export const chatModels: ChatModel[] = [
     gatewayOrder: ["bedrock", "deepinfra"],
   },
   {
+    id: "deepseek/deepseek-r1",
+    name: "DeepSeek R1",
+    provider: "deepseek",
+    description: "DeepSeek's flagship reasoning model",
+    gatewayOrder: ["bedrock", "deepinfra", "groq"],
+    reasoningEffort: "high",
+  },
+  {
     id: "moonshotai/kimi-k2.5",
     name: "Kimi K2.5",
     provider: "moonshotai",
@@ -60,6 +68,36 @@ export const chatModels: ChatModel[] = [
     provider: "xai",
     description: "Fast non-reasoning model with tool use",
     gatewayOrder: ["xai"],
+  },
+  {
+    id: "anthropic/claude-sonnet-4",
+    name: "Claude Sonnet 4",
+    provider: "anthropic",
+    description: "Anthropic's balanced flagship — fast, smart, multimodal",
+    gatewayOrder: ["anthropic", "bedrock"],
+  },
+  {
+    id: "anthropic/claude-opus-4",
+    name: "Claude Opus 4",
+    provider: "anthropic",
+    description: "Anthropic's most capable model with extended reasoning",
+    gatewayOrder: ["anthropic", "bedrock"],
+    reasoningEffort: "high",
+  },
+  {
+    id: "google/gemini-2.5-flash",
+    name: "Gemini 2.5 Flash",
+    provider: "google",
+    description: "Google's fast multimodal model with web search and vision",
+    gatewayOrder: ["google"],
+  },
+  {
+    id: "google/gemini-2.5-pro",
+    name: "Gemini 2.5 Pro",
+    provider: "google",
+    description: "Google's most capable reasoning model with long context",
+    gatewayOrder: ["google"],
+    reasoningEffort: "high",
   },
 ];
 
