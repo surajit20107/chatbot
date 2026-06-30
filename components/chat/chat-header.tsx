@@ -50,7 +50,7 @@ function PureChatHeader({
         />
       )}
 
-      <Button
+      {/* <Button
         asChild
         className="hidden rounded-lg bg-foreground px-4 text-background hover:bg-foreground/90 md:ml-auto md:flex"
       >
@@ -62,7 +62,7 @@ function PureChatHeader({
           <VercelIcon size={16} />
           Deploy with Vercel
         </Link>
-      </Button>
+      </Button> */}
     </header>
   );
 }
