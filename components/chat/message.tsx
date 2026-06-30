@@ -1,5 +1,6 @@
 "use client";
 import type { UseChatHelpers } from "@ai-sdk/react";
+import type { ToolUIPart } from "ai";
 import type { Vote } from "@/lib/db/schema";
 import type { ChatMessage } from "@/lib/types";
 import { cn, sanitizeText } from "@/lib/utils";
@@ -294,6 +295,49 @@ const PurePreviewMessage = ({
                     />
                   )
                 }
+              />
+            )}
+          </ToolContent>
+        </Tool>
+      );
+    }
+
+    if (type.startsWith("tool-")) {
+      const toolPart = part as {
+        toolCallId: string;
+        state:
+          | "input-streaming"
+          | "input-available"
+          | "approval-requested"
+          | "approval-responded"
+          | "output-available"
+          | "output-error"
+          | "output-denied";
+        input?: unknown;
+        output?: unknown;
+        errorText?: string;
+      };
+      const { toolCallId, state } = toolPart;
+
+      return (
+        <Tool
+          className="w-[min(100%,450px)]"
+          defaultOpen={true}
+          key={toolCallId}
+        >
+          <ToolHeader
+            state={state}
+            type={type as ToolUIPart["type"]}
+          />
+          <ToolContent>
+            {(state === "input-available" ||
+              state === "input-streaming" ||
+              state === "approval-requested") &&
+              toolPart.input != null && <ToolInput input={toolPart.input} />}
+            {(state === "output-available" || state === "output-error") && (
+              <ToolOutput
+                errorText={toolPart.errorText}
+                output={toolPart.output}
               />
             )}
           </ToolContent>

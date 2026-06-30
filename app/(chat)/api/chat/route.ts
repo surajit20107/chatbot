@@ -6,6 +6,7 @@ import {
   generateId,
   stepCountIs,
   streamText,
+  type ToolSet,
 } from "ai";
 import { checkBotId } from "botid/server";
 import { after } from "next/server";
@@ -39,6 +40,8 @@ import {
 } from "@/lib/db/queries";
 import type { DBMessage } from "@/lib/db/schema";
 import { ChatbotError } from "@/lib/errors";
+import { getComposioToolsForUser } from "@/lib/composio/client";
+import { sanitizeToolCallIds } from "@/lib/composio/sanitize-messages";
 import { checkIpRateLimit } from "@/lib/ratelimit";
 import type { ChatMessage } from "@/lib/types";
 import { convertToUIMessages, generateUUID } from "@/lib/utils";
@@ -186,26 +189,45 @@ export async function POST(request: Request) {
     const isReasoningModel = capabilities?.reasoning === true;
     const supportsTools = capabilities?.tools === true;
 
-    const modelMessages = await convertToModelMessages(uiMessages);
+    const composioTools =
+      session.user.type !== "guest"
+        ? await getComposioToolsForUser(session.user.id)
+        : {};
+
+    const sanitizedUiMessages = sanitizeToolCallIds(uiMessages);
+    const modelMessages = await convertToModelMessages(sanitizedUiMessages);
 
     const stream = createUIMessageStream({
       originalMessages: isToolApprovalFlow ? uiMessages : undefined,
       execute: async ({ writer: dataStream }) => {
+        const localTools = {
+          getWeather,
+          createDocument: createDocument({
+            session,
+            dataStream,
+            modelId: chatModel,
+          }),
+          editDocument: editDocument({ dataStream, session }),
+          updateDocument: updateDocument({
+            session,
+            dataStream,
+            modelId: chatModel,
+          }),
+          requestSuggestions: requestSuggestions({
+            session,
+            dataStream,
+            modelId: chatModel,
+          }),
+        };
+
+        const allTools: ToolSet = { ...localTools, ...composioTools };
+
         const result = streamText({
           model: getLanguageModel(chatModel),
           system: systemPrompt({ requestHints, supportsTools }),
           messages: modelMessages,
           stopWhen: stepCountIs(5),
-          experimental_activeTools:
-            isReasoningModel && !supportsTools
-              ? []
-              : [
-                  "getWeather",
-                  "createDocument",
-                  "editDocument",
-                  "updateDocument",
-                  "requestSuggestions",
-                ],
+          ...(supportsTools ? {} : { experimental_activeTools: [] }),
           providerOptions: {
             ...(modelConfig?.gatewayOrder && {
               gateway: { order: modelConfig.gatewayOrder },
@@ -214,25 +236,7 @@ export async function POST(request: Request) {
               openai: { reasoningEffort: modelConfig.reasoningEffort },
             }),
           },
-          tools: {
-            getWeather,
-            createDocument: createDocument({
-              session,
-              dataStream,
-              modelId: chatModel,
-            }),
-            editDocument: editDocument({ dataStream, session }),
-            updateDocument: updateDocument({
-              session,
-              dataStream,
-              modelId: chatModel,
-            }),
-            requestSuggestions: requestSuggestions({
-              session,
-              dataStream,
-              modelId: chatModel,
-            }),
-          },
+          tools: allTools,
           experimental_telemetry: {
             isEnabled: isProductionEnvironment,
             functionId: "stream-text",
