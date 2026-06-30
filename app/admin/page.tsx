@@ -2,6 +2,7 @@ import { connection } from "next/server";
 import { Suspense } from "react";
 import { AdminPanel } from "./admin-panel";
 
+
 function AdminSkeleton() {
   return (
     <div className="mx-auto max-w-3xl animate-pulse space-y-8 px-6 py-12">

@@ -7,7 +7,7 @@ export function getSupermemoryToolsForUser(userId: string): ToolSet {
   if (!apiKey) return {};
 
   try {
-    return supermemoryTools(apiKey, { containerTags: [userId] });
+    return supermemoryTools(apiKey, { containerTags: [userId] }) as unknown as ToolSet;
   } catch (error) {
     console.error("[Supermemory] Failed to load tools for user:", userId, error);
     return {};
